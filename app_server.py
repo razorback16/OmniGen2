@@ -447,6 +447,42 @@ async def vectorize_image(
         raise HTTPException(status_code=500, detail=f"Vectorization failed: {str(e)}")
 
 
+@app.post("/v1/models/load")
+async def load_models():
+    """Manually load models to GPU."""
+    try:
+        loaded = app.state.model_manager.load_models()
+        if loaded:
+            return {"message": "Models loaded successfully", "status": "loaded"}
+        else:
+            return {"message": "Models already loaded", "status": "already_loaded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load models: {str(e)}")
+
+
+@app.post("/v1/models/unload")
+async def unload_models():
+    """Manually unload models from GPU."""
+    try:
+        unloaded = app.state.model_manager.unload_models()
+        if unloaded:
+            return {"message": "Models unloaded successfully", "status": "unloaded"}
+        else:
+            return {"message": "Models already unloaded", "status": "already_unloaded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unload models: {str(e)}")
+
+
+@app.get("/v1/models/status")
+async def get_model_status():
+    """Get current status of model loading."""
+    try:
+        status = app.state.model_manager.get_status()
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get model status: {str(e)}")
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -462,6 +498,11 @@ async def root():
             "generate": "/v1/images/generations",
             "edit": "/v1/images/edits",
             "vectorize": "/v1/images/vectorize",
+            "models": {
+                "load": "/v1/models/load",
+                "unload": "/v1/models/unload",
+                "status": "/v1/models/status"
+            },
             "health": "/health"
         }
     }

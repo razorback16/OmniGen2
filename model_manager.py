@@ -1,6 +1,7 @@
 import time
 import threading
 import gc
+import os
 import torch
 from typing import Optional, Tuple
 from datetime import datetime, timedelta
@@ -27,7 +28,17 @@ class ModelManager:
             idle_timeout_seconds: Time in seconds before unloading idle model (default: 1 hour)
         """
         self.args = args
-        self.idle_timeout_seconds = idle_timeout_seconds
+        # Check for environment variable first, then use provided value
+        env_timeout = os.getenv('MODEL_IDLE_TIMEOUT_SECONDS')
+        if env_timeout:
+            try:
+                self.idle_timeout_seconds = int(env_timeout)
+                print(f"Using MODEL_IDLE_TIMEOUT_SECONDS from environment: {self.idle_timeout_seconds} seconds")
+            except ValueError:
+                print(f"Invalid MODEL_IDLE_TIMEOUT_SECONDS value: {env_timeout}, using default: {idle_timeout_seconds}")
+                self.idle_timeout_seconds = idle_timeout_seconds
+        else:
+            self.idle_timeout_seconds = idle_timeout_seconds
         self.pipeline: Optional[OmniGen2Pipeline] = None
         self.accelerator: Optional[Accelerator] = None
         self.weight_dtype: Optional[torch.dtype] = None
@@ -179,6 +190,59 @@ class ModelManager:
             self.last_access_time = datetime.now()
             
             return self.pipeline, self.accelerator
+    
+    def load_models(self) -> bool:
+        """
+        Manually load models to GPU.
+        
+        Returns:
+            bool: True if models were loaded successfully, False if already loaded
+        """
+        with self._lock:
+            if self.pipeline is not None:
+                return False  # Already loaded
+            
+            self._loading = True
+            try:
+                self._load_models()
+                return True
+            finally:
+                self._loading = False
+    
+    def unload_models(self) -> bool:
+        """
+        Manually unload models from GPU.
+        
+        Returns:
+            bool: True if models were unloaded, False if already unloaded
+        """
+        with self._lock:
+            if self.pipeline is None:
+                return False  # Already unloaded
+            
+            self._unload_models()
+            return True
+    
+    def get_status(self) -> dict:
+        """
+        Get the current status of the model manager.
+        
+        Returns:
+            dict: Status information including loaded state and last access time
+        """
+        with self._lock:
+            status = {
+                "loaded": self.pipeline is not None,
+                "idle_timeout_seconds": self.idle_timeout_seconds,
+                "last_access_time": self.last_access_time.isoformat() if self.last_access_time else None
+            }
+            
+            if self.last_access_time and self.pipeline is not None:
+                time_since_access = (datetime.now() - self.last_access_time).total_seconds()
+                status["seconds_since_last_access"] = int(time_since_access)
+                status["seconds_until_timeout"] = max(0, self.idle_timeout_seconds - int(time_since_access))
+            
+            return status
     
     def shutdown(self):
         """Clean shutdown of the model manager."""

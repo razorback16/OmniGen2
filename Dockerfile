@@ -63,6 +63,9 @@ RUN mkdir -p /app/pretrained_models /app/outputs /app/static/svgs /root/.cache/h
 # Set BASE_URL environment variable for vectorize endpoint
 ENV BASE_URL="https://svgmaker.subhagato.com"
 
+# Set environment variables for model management
+ENV MODEL_IDLE_TIMEOUT_SECONDS=7200
+
 # Expose the port
 EXPOSE 8000
 
