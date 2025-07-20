@@ -20,10 +20,9 @@ import torch
 import vtracer
 
 from accelerate import Accelerator
-from diffusers.hooks import apply_group_offloading
 
+from model_manager import ModelManager
 from omnigen2.pipelines.omnigen2.pipeline_omnigen2 import OmniGen2Pipeline
-from omnigen2.models.transformers.transformer_omnigen2 import OmniGen2Transformer2DModel
 
 
 def parse_args():
@@ -171,24 +170,19 @@ async def lifespan(app: FastAPI):
         enable_group_offload=ARGS.enable_group_offload,
     )
     
-    accelerator = Accelerator(mixed_precision=args.dtype if args.dtype != 'fp32' else 'no')
-    weight_dtype = torch.float32
-    if args.dtype == 'fp16':
-        weight_dtype = torch.float16
-    elif args.dtype == 'bf16':
-        weight_dtype = torch.bfloat16
-    
-    print(f"Loading model from: {args.model_path}")
-    app.state.pipeline = load_pipeline(args, accelerator, weight_dtype)
-    app.state.accelerator = accelerator
+    # Create model manager (no models loaded yet)
+    print("Initializing model manager...")
+    app.state.model_manager = ModelManager(ARGS, idle_timeout_seconds=3600)  # 1 hour timeout
     app.state.args = args
-    print("Model loaded successfully!")
+    print("Server ready. Models will be loaded on first request.")
     
     yield
     
     # Shutdown
-    app.state.pipeline = None
-    app.state.accelerator = None
+    print("Shutting down model manager...")
+    if hasattr(app.state, 'model_manager'):
+        app.state.model_manager.shutdown()
+    app.state.model_manager = None
     app.state.args = None
 
 
@@ -210,59 +204,6 @@ class GenerationRequest(BaseModel):
     response_format: str = "b64_json"
 
 
-def load_pipeline(args: argparse.Namespace, accelerator: Accelerator, weight_dtype: torch.dtype) -> OmniGen2Pipeline:
-    """Load the OmniGen2 pipeline with standard model loading."""
-    pipeline = OmniGen2Pipeline.from_pretrained(
-        args.model_path,
-        torch_dtype=weight_dtype,
-        trust_remote_code=True,
-    )
-    
-    # Load transformer from separate path if specified, otherwise use default
-    if args.transformer_path:
-        print(f"Transformer weights loaded from {args.transformer_path}")
-        pipeline.transformer = OmniGen2Transformer2DModel.from_pretrained(
-            args.transformer_path,
-            torch_dtype=weight_dtype,
-        )
-    else:
-        pipeline.transformer = OmniGen2Transformer2DModel.from_pretrained(
-            args.model_path,
-            subfolder="transformer",
-            torch_dtype=weight_dtype,
-        )
-
-    # Load LoRA weights if specified
-    if args.transformer_lora_path:
-        print(f"LoRA weights loaded from {args.transformer_lora_path}")
-        pipeline.load_lora_weights(args.transformer_lora_path)
-
-    # Set up scheduler
-    if args.scheduler == "dpmsolver":
-        from omnigen2.schedulers.scheduling_dpmsolver_multistep import DPMSolverMultistepScheduler
-        scheduler = DPMSolverMultistepScheduler(
-            algorithm_type="dpmsolver++",
-            solver_type="midpoint",
-            solver_order=2,
-            prediction_type="flow_prediction",
-        )
-        pipeline.scheduler = scheduler
-
-    # Set up offloading
-    if args.enable_sequential_cpu_offload:
-        pipeline.enable_sequential_cpu_offload()
-    elif args.enable_model_cpu_offload:
-        pipeline.enable_model_cpu_offload()
-    elif args.enable_group_offload:
-        apply_group_offloading(pipeline.transformer, onload_device=accelerator.device, offload_type="block_level", num_blocks_per_group=2, use_stream=True)
-        apply_group_offloading(pipeline.mllm, onload_device=accelerator.device, offload_type="block_level", num_blocks_per_group=2, use_stream=True)
-        apply_group_offloading(pipeline.vae, onload_device=accelerator.device, offload_type="block_level", num_blocks_per_group=2, use_stream=True)
-    else:
-        pipeline = pipeline.to(accelerator.device)
-    return pipeline
-
-
-
 
 
 def get_size_dimensions(size: str) -> tuple[int, int]:
@@ -277,15 +218,17 @@ def get_size_dimensions(size: str) -> tuple[int, int]:
         return 1024, 1024  # fallback to default
 
 
-def run_pipeline(args: argparse.Namespace, 
-                accelerator: Accelerator, 
-                pipeline: OmniGen2Pipeline, 
+def run_pipeline(model_manager: ModelManager,
+                args: argparse.Namespace, 
                 instruction: str, 
                 negative_prompt: str, 
                 input_images: Optional[List[Image.Image]],
                 quality: str = "auto",
                 mode: str = "generate") -> List[Image.Image]:
     """Run the image generation pipeline with mode-specific configuration."""
+    # Get pipeline and accelerator (loads if necessary)
+    pipeline, accelerator = model_manager.get_pipeline()
+    
     generator = torch.Generator(device=accelerator.device).manual_seed(args.seed)
     
     # Get mode-specific configuration
@@ -332,7 +275,7 @@ async def generate_image(request: GenerationRequest):
         args.width, args.height = get_size_dimensions(request.size)
         args.num_images_per_prompt = request.n
         
-        results = run_pipeline(args, app.state.accelerator, app.state.pipeline, request.prompt, args.negative_prompt, None, request.quality, "generate")
+        results = run_pipeline(app.state.model_manager, args, request.prompt, args.negative_prompt, None, request.quality, "generate")
         return {"data": encode_images_to_base64(results)}
     
     except Exception as e:
@@ -402,7 +345,7 @@ async def edit_image(
             input_image_np[mask_np == 0] = 0  # Black out the unmasked area
             input_images[0] = Image.fromarray(input_image_np)
 
-        results = run_pipeline(args, app.state.accelerator, app.state.pipeline, prompt, args.negative_prompt, input_images, quality, "edit")
+        results = run_pipeline(app.state.model_manager, args, prompt, args.negative_prompt, input_images, quality, "edit")
         return {"data": encode_images_to_base64(results)}
     
     except HTTPException:
