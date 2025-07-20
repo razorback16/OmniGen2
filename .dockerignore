@@ -1,0 +1,104 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Large files and directories that shouldn't be in the image
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Logs
+logs/
+*.log
+
+# Node modules (if any)
+node_modules/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test files
+tests/
+test_*
+*_test.py
+
+# Example files and outputs (optional - remove if you want them in the image)
+example_images/
+outputs/
+results/
+
+# Model checkpoints (these should be mounted as volumes)
+pretrained_models/
+*.pth
+*.pt
+*.safetensors
+*.bin
+
+# Training scripts and configs (optional)
+scripts/
+options/
+data_configs/
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Environment files
+.env.local
+.env.development
+.env.test
+.env.production

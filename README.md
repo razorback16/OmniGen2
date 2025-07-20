@@ -162,6 +162,48 @@ bash example_in_context_generation.sh
     python app_chat.py
     ```
 
+### OpenAI-Compatible API:
+
+```bash
+# Start the server
+python app_server.py
+
+# Text-to-Image Generation
+curl -X POST "http://127.0.0.1:8000/v1/images/generations" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "prompt": "A vector illustration of a Panda eating a cake."
+    }' | jq -r '.data[0].b64_json' | base64 --decode > outputs/test_generation.png
+
+# Image Editing
+curl -X POST "http://127.0.0.1:8000/v1/images/edits" \
+    -F "prompt=Change the background to classroom." \
+    -F "image=@example_images/ComfyUI_temp_mllvz_00071_.png" | jq -r '.data[0].b64_json' | base64 --decode > outputs/test_edit.png
+
+# In-Context Generation
+curl -X POST "http://127.0.0.1:8000/v1/images/edits" \
+    -F "prompt=Please let the person in image 2 hold the toy from the first image in a parking lot." \
+    -F "image=@example_images/04.jpg" \
+    -F "image=@example_images/000365954.jpg" | jq -r '.data[0].b64_json' | base64 --decode > outputs/test_in_context_generation.png
+
+# Inpainting with a Mask
+# Note: You will need to provide your own image and mask file for this example.
+curl -X POST "http://127.0.0.1:8000/v1/images/edits" \
+    -F "prompt=Add apple watch to his wrist" \
+    -F "image=@example_images/000050281.jpg" \
+    -F "mask=@example_images/000050281_mask.png" | jq -r '.data[0].b64_json' | base64 --decode > outputs/test_inpainting.png
+
+# Image Vectorization (Convert raster image to SVG)
+curl -X POST "http://127.0.0.1:8000/v1/images/vectorize" \
+    -F "file=@example_images/panda-eating-cake.png" \
+    -F "response_format=b64_json" | jq -r '.image.b64_json' | base64 --decode > outputs/test_vectorize.svg
+
+# Alternative: Get SVG content directly
+curl -X POST "http://127.0.0.1:8000/v1/images/vectorize" \
+    -F "file=@example_images/panda-eating-cake.png" \
+    -F "response_format=url" | jq -r '.image.svg' > outputs/test_vectorize_direct.svg
+```
+
 ## 💡 Usage Tips
 To achieve optimal results with OmniGen2, you can adjust the following key hyperparameters based on your specific use case.
 - `text_guidance_scale`: Controls how strictly the output adheres to the text prompt (Classifier-Free Guidance).

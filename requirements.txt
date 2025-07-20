@@ -16,4 +16,8 @@ python-dotenv
 ninja
 ipykernel
 wheel
+fastapi
+uvicorn[standard]
+python-multipart
+vtracer
 triton-windows; sys_platform == "win32"
